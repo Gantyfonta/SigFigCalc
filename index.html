@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Significant Figures Calculator</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #0f172a;
+    color: #fff;
+    text-align: center;
+    padding: 2rem;
+  }
+  .box {
+    margin: 1rem auto;
+    padding: 1rem;
+    max-width: 500px;
+    background: #1e293b;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+  }
+  input, select, button {
+    margin: 0.3rem;
+    padding: 0.5rem;
+    border-radius: 6px;
+    border: none;
+    font-size: 1rem;
+  }
+  button {
+    background: #ffcc00;
+    color: black;
+    cursor: pointer;
+    font-weight: bold;
+  }
+  button:hover {
+    background: #ffdb4d;
+  }
+  canvas {
+    margin-top: 1rem;
+    background: #fff;
+    border-radius: 12px;
+    padding: 0.5rem;
+  }
+</style>
+</head>
+<body>
+  <h1>Significant Figures Calculator</h1>
+  <div class="box">
+    <input id="valA" type="text" placeholder="Value A" value="3.20e5">
+    <select id="operation">
+      <option value="+">+</option>
+      <option value="-">−</option>
+      <option value="*">×</option>
+      <option value="/">÷</option>
+    </select>
+    <input id="valB" type="text" placeholder="Value B" value="15.0">
+    <br>
+    <button onclick="calculate()">Calculate</button>
+    <br>
+    <canvas id="resultCanvas" width="480" height="200"></canvas>
+  </div>
+
+<script>
+const canvas = document.getElementById("resultCanvas");
+const ctx = canvas.getContext("2d");
+
+function clearCanvas() {
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle = "#000";
+  ctx.font = "16px monospace";
+}
+
+function countSigFigs(str) {
+  if (str.toLowerCase().includes("e")) {
+    let [coef] = str.toLowerCase().split("e");
+    return coef.replace(".","").replace(/^0+/, "").length;
+  }
+  if (str.includes(".")) {
+    return str.replace(".","").replace(/^0+/, "").length;
+  } else {
+    return str.replace(/^0+/, "").replace(/0+$/," ").trim().length;
+  }
+}
+
+function roundToSigFigs(num, n) {
+  return Number(num.toPrecision(n));
+}
+
+function calculate() {
+  const aStr = document.getElementById("valA").value.trim();
+  const bStr = document.getElementById("valB").value.trim();
+  const op = document.getElementById("operation").value;
+  const aVal = Number(aStr);
+  const bVal = Number(bStr);
+
+  clearCanvas();
+
+  if (isNaN(aVal) || isNaN(bVal)) {
+    ctx.fillText("Invalid input.", 10, 30);
+    return;
+  }
+
+  let raw;
+  if (op === "+") raw = aVal + bVal;
+  if (op === "-") raw = aVal - bVal;
+  if (op === "*") raw = aVal * bVal;
+  if (op === "/") raw = aVal / bVal;
+
+  const aSF = countSigFigs(aStr);
+  const bSF = countSigFigs(bStr);
+  const targetSF = Math.min(aSF, bSF);
+  const rounded = roundToSigFigs(raw, targetSF);
+
+  ctx.fillText(`Value A: ${aStr} (SF=${aSF})`, 10, 30);
+  ctx.fillText(`Value B: ${bStr} (SF=${bSF})`, 10, 55);
+  ctx.fillText(`Operation: ${op}`, 10, 80);
+  ctx.fillText(`Raw Result: ${raw}`, 10, 110);
+  ctx.fillText(`Rounded (${targetSF} SF): ${rounded}`, 10, 140);
+}
+
+clearCanvas();
+ctx.fillText("Enter values and click Calculate", 10, 30);
+</script>
+</body>
+</html>
