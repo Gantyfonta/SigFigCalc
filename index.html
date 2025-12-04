@@ -1,126 +1,266 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Significant Figures Calculator</title>
 <style>
-  body {
-    font-family: Arial, sans-serif;
-    background: #0f172a;
-    color: #fff;
-    text-align: center;
-    padding: 2rem;
-  }
-  .box {
-    margin: 1rem auto;
-    padding: 1rem;
-    max-width: 500px;
-    background: #1e293b;
-    border-radius: 12px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-  }
-  input, select, button {
-    margin: 0.3rem;
-    padding: 0.5rem;
-    border-radius: 6px;
-    border: none;
-    font-size: 1rem;
-  }
-  button {
-    background: #ffcc00;
-    color: black;
-    cursor: pointer;
-    font-weight: bold;
-  }
-  button:hover {
-    background: #ffdb4d;
-  }
-  canvas {
-    margin-top: 1rem;
-    background: #fff;
-    border-radius: 12px;
-    padding: 0.5rem;
-  }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; max-width:900px; margin:28px auto; padding:18px; color:#0b1220; }
+  h1 { margin:0 0 8px 0; font-size:20px; }
+  .card { background:#f7fafc; border-radius:12px; padding:16px; box-shadow: 0 6px 18px rgba(2,6,23,0.06); }
+  label { display:block; margin-top:10px; font-weight:600; }
+  input[type=text], select { width:100%; padding:8px 10px; margin-top:6px; box-sizing:border-box; border-radius:8px; border:1px solid #d1d5db; }
+  .row { display:flex; gap:10px; margin-top:10px; }
+  .col { flex:1; }
+  button { margin-top:12px; padding:10px 14px; border-radius:10px; border:0; background:#0ea5a3; color:white; font-weight:700; cursor:pointer; }
+  pre { background:#fff; padding:10px; border-radius:8px; border:1px solid #e6eef0; overflow:auto; }
+  .muted { color:#475569; font-weight:500; font-size:13px; }
 </style>
 </head>
 <body>
-  <h1>Significant Figures Calculator</h1>
-  <div class="box">
-    <input id="valA" type="text" placeholder="Value A" value="3.20e5">
-    <select id="operation">
-      <option value="+">+</option>
-      <option value="-">−</option>
-      <option value="*">×</option>
-      <option value="/">÷</option>
+  <div class="card">
+    <h1>Significant Figures Calculator</h1>
+    <div class="muted">Enter numbers (plain or scientific notation). Choose operation. Click Calculate.</div>
+
+    <label>First number</label>
+    <input id="a" type="text" placeholder="e.g. 12.30 or 1.230e1 or 1200." value="12.30">
+
+    <label>Second number</label>
+    <input id="b" type="text" placeholder="e.g. 3.4 or 0.00450 or 3.400e0" value="3.4">
+
+    <label>Operation</label>
+    <select id="op">
+      <option value="*">Multiply (×)</option>
+      <option value="/">Divide (÷)</option>
+      <option value="+">Add (+)</option>
+      <option value="-">Subtract (−)</option>
     </select>
-    <input id="valB" type="text" placeholder="Value B" value="15.0">
-    <br>
-    <button onclick="calculate()">Calculate</button>
-    <br>
-    <canvas id="resultCanvas" width="480" height="200"></canvas>
+
+    <div class="row">
+      <div class="col">
+        <label><input id="steps" type="checkbox" checked> Show steps</label>
+      </div>
+      <div class="col" style="flex:0 0 160px; display:flex; align-items:flex-end; justify-content:flex-end;">
+        <button id="calcBtn">Calculate</button>
+      </div>
+    </div>
+
+    <h3 style="margin-top:16px">Result</h3>
+    <pre id="result">—</pre>
+
+    <h3 style="margin-top:8px">Diagnostics</h3>
+    <pre id="diag">—</pre>
+
+    <div style="margin-top:12px" class="muted">
+      Notes: Trailing zeros in whole numbers without a decimal (e.g. <code>1200</code>) are treated as <strong>not significant</strong>. A decimal point (e.g. <code>1200.</code>) or scientific notation explicitly shows significant zeros. Use scientific notation for unambiguous significant-figure input.
+    </div>
   </div>
 
 <script>
-const canvas = document.getElementById("resultCanvas");
-const ctx = canvas.getContext("2d");
+/* Utilities to analyze and round according to significant figure rules */
 
-function clearCanvas() {
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-  ctx.fillStyle = "#000";
-  ctx.font = "16px monospace";
-}
+/* Normalize input string and remove surrounding whitespace */
+function cleanStr(s){ return String(s).trim(); }
 
-function countSigFigs(str) {
-  if (str.toLowerCase().includes("e")) {
-    let [coef] = str.toLowerCase().split("e");
-    return coef.replace(".","").replace(/^0+/, "").length;
+/* Count significant figures for a numeric string (supports scientific notation).
+   Rules implemented:
+   - For numbers in scientific notation (e.g. 1.230e3), sig figs = digits in mantissa (excluding decimal point and sign).
+   - For normal decimal notation:
+     * Leading zeros are not significant (0.00234 has 3 sig figs).
+     * Captive zeros (between non-zero digits) are significant (1002 -> 4).
+     * Trailing zeros are significant only if there's a decimal point (1200. -> 4, 1200 -> 2 by classroom convention).
+*/
+function countSigFigs(str){
+  const s = cleanStr(str);
+  if (!s || s.toLowerCase() === 'nan' || s.toLowerCase()==='infinity' || s.toLowerCase()==='+infinity' || s.toLowerCase()==='-infinity') return 0;
+  // Scientific notation?
+  const sciMatch = s.match(/^([+-]?)(\d*\.?\d+)[eE]([+-]?\d+)$/);
+  if (sciMatch){
+    const mant = sciMatch[2];
+    const digits = mant.replace('.', '').replace(/^0+/, ''); // remove leading zeros in mantissa
+    // If mantissa is like 0.00123e5, after removing leading zeros maybe empty -> fallback to counting digits excluding decimal
+    return digits.length || mant.replace('.', '').length;
   }
-  if (str.includes(".")) {
-    return str.replace(".","").replace(/^0+/, "").length;
+  // Not scientific
+  // If contains decimal point, trailing zeros are significant
+  if (s.indexOf('.') >= 0){
+    // Remove leading zeros (only those before first non-zero digit)
+    // But for numbers like "0.00450", leading zeros before decimal or after decimal but before first non-zero are not significant.
+    // Convert to plain digits
+    const digits = s.replace(/^[+-]?/, '').replace('.', '');
+    // Count digits excluding leading zeros from the left
+    const trimmedLeft = digits.replace(/^0+/, '');
+    return trimmedLeft.length || 0;
   } else {
-    return str.replace(/^0+/, "").replace(/0+$/," ").trim().length;
+    // No decimal point: trailing zeros are ambiguous and treated as not significant under classroom rule
+    // Remove leading zeros then remove trailing zeros
+    const core = s.replace(/^[+-]?0*/, ''); // drop sign and leading zeros
+    if (core === '') return 1; // number was "0" or "00" -> 1 sig fig for zero (by convention)
+    // Remove trailing zeros
+    const trimmed = core.replace(/0+$/,'');
+    return trimmed.length || 1;
   }
 }
 
-function roundToSigFigs(num, n) {
-  return Number(num.toPrecision(n));
+/* Determine decimal places of a normal-notation number string (useful for + / - rounding).
+   For addition/subtraction: determine the place value of least precise digit (e.g., 12.3 has 1 decimal place -> uncertain at 0.1).
+   Returns an integer (number of digits after decimal). For scientific notation, convert to a decimal estimate of decimal places of the given representation:
+   e.g., "1.23e2" represents 123 -> decimal places = 0 (integer) unless mantissa had decimal and effectively the given representation implies...
+   For simplicity: if input is in scientific notation, we compute the value and produce the number of decimal places present in the normalized decimal string (up to a limit).
+*/
+function decimalPlaces(str){
+  const s = cleanStr(str);
+  if (s.indexOf('e')>=0 || s.indexOf('E')>=0){
+    // Convert to decimal string with sufficient precision
+    const n = Number(s);
+    if (!isFinite(n)) return 0;
+    // We'll use toLocaleString? better to use toFixed with enough digits
+    // Determine places from original mantissa length and exponent roughly:
+    const sciMatch = s.match(/^([+-]?)(\d*\.?\d+)[eE]([+-]?\d+)$/);
+    if (!sciMatch) return 0;
+    const mant = sciMatch[2].replace('.', '');
+    const mantDigits = sciMatch[2].includes('.') ? sciMatch[2].split('.')[1].length : 0;
+    const exp = Number(sciMatch[3]);
+    // Effective decimal places after converting: max(0, mantDigits - exp) but not less than 0
+    const dp = Math.max(0, mantDigits - exp);
+    return dp;
+  } else {
+    if (s.indexOf('.')>=0){
+      return s.split('.')[1].length;
+    } else {
+      return 0;
+    }
+  }
 }
 
-function calculate() {
-  const aStr = document.getElementById("valA").value.trim();
-  const bStr = document.getElementById("valB").value.trim();
-  const op = document.getElementById("operation").value;
-  const aVal = Number(aStr);
-  const bVal = Number(bStr);
+/* Round a numeric value to n significant figures */
+function roundToSigFigs(value, n){
+  if (!isFinite(value) || n <= 0) return value;
+  // Handle zero
+  if (value === 0) return 0;
+  const sign = Math.sign(value);
+  const absVal = Math.abs(value);
+  const exponent = Math.floor(Math.log10(absVal));
+  const factor = Math.pow(10, exponent - n + 1);
+  const rounded = Math.round(absVal / factor) * factor;
+  // Avoid -0
+  return sign * Number(rounded.toPrecision(n));
+}
 
-  clearCanvas();
+/* Round a numeric value to a fixed number of decimal places (for addition/subtraction) */
+function roundToDecimals(value, decimals){
+  if (!isFinite(value)) return value;
+  const factor = Math.pow(10, decimals);
+  // Fix floating errors by using toFixed with guard
+  const rounded = Math.round(value * factor) / factor;
+  // Convert to string with exactly decimals places to show significance
+  return Number(rounded.toFixed(decimals));
+}
 
-  if (isNaN(aVal) || isNaN(bVal)) {
-    ctx.fillText("Invalid input.", 10, 30);
-    return;
+/* Helper: format number nicely: prefer scientific notation if very large or small, otherwise normal.
+   But retain trailing zeros when needed by decimals parameter (if provided) or sig figs (if provided).
+*/
+function formatNumber(value, options){
+  // options: { sigFigs: n, decimals: d, preferSci: bool }
+  if (!isFinite(value)) return String(value);
+  if (options && typeof options.decimals === 'number'){
+    // Show with fixed decimals
+    return Number(value).toFixed(options.decimals);
+  }
+  if (options && typeof options.sigFigs === 'number'){
+    // Use toPrecision then remove unnecessary plus signs
+    return Number(value.toPrecision(options.sigFigs)).toString();
+  }
+  // Default formatting: when abs < 1e-6 or > 1e9 use scientific
+  const absVal = Math.abs(value);
+  if ((absVal !== 0 && (absVal < 1e-6 || absVal >= 1e9))){
+    return value.toExponential();
+  }
+  return String(value);
+}
+
+/* Main compute function */
+function compute(aStr, bStr, op){
+  const aClean = cleanStr(aStr);
+  const bClean = cleanStr(bStr);
+  // Try parse numeric values
+  const aVal = Number(aClean);
+  const bVal = Number(bClean);
+
+  const diag = [];
+  if (aClean === '' || bClean === '' || isNaN(aVal) || isNaN(bVal)){
+    throw new Error('Please enter two valid numbers (plain or scientific notation).');
   }
 
-  let raw;
-  if (op === "+") raw = aVal + bVal;
-  if (op === "-") raw = aVal - bVal;
-  if (op === "*") raw = aVal * bVal;
-  if (op === "/") raw = aVal / bVal;
+  const aSig = countSigFigs(aClean);
+  const bSig = countSigFigs(bClean);
+  const aDec = decimalPlaces(aClean);
+  const bDec = decimalPlaces(bClean);
 
-  const aSF = countSigFigs(aStr);
-  const bSF = countSigFigs(bStr);
-  const targetSF = Math.min(aSF, bSF);
-  const rounded = roundToSigFigs(raw, targetSF);
+  diag.push(`First input: "${aClean}" → value = ${aVal}, sig figs = ${aSig}, decimal places shown = ${aDec}`);
+  diag.push(`Second input: "${bClean}" → value = ${bVal}, sig figs = ${bSig}, decimal places shown = ${bDec}`);
 
-  ctx.fillText(`Value A: ${aStr} (SF=${aSF})`, 10, 30);
-  ctx.fillText(`Value B: ${bStr} (SF=${bSF})`, 10, 55);
-  ctx.fillText(`Operation: ${op}`, 10, 80);
-  ctx.fillText(`Raw Result: ${raw}`, 10, 110);
-  ctx.fillText(`Rounded (${targetSF} SF): ${rounded}`, 10, 140);
+  let rawResult;
+  if (op === '*') rawResult = aVal * bVal;
+  else if (op === '/') rawResult = aVal / bVal;
+  else if (op === '+') rawResult = aVal + bVal;
+  else if (op === '-') rawResult = aVal - bVal;
+  else throw new Error('Unknown operation');
+
+  diag.push(`Raw result (unrounded): ${rawResult}`);
+
+  // Decide rounding
+  let finalValue, reason, formatted;
+  if (op === '*' || op === '/'){
+    const minSig = Math.min(aSig, bSig);
+    finalValue = roundToSigFigs(rawResult, minSig);
+    reason = `Multiplication/Division => round to ${minSig} significant figures (smallest sig figs of inputs).`;
+    formatted = formatNumber(finalValue, { sigFigs: minSig });
+  } else {
+    // Addition or subtraction: round to least precise DECIMAL PLACE among inputs
+    // Find the largest decimal place (i.e., smallest number of decimal places gives coarser precision)
+    // Example: 12.34 (2 dp) and 0.1 (1 dp) => round to 1 dp
+    const maxDp = Math.max(aDec, bDec); // careful: we want the least precise (fewest decimal places) => take min
+    // Wait: Let's reason: "least precise decimal place" = the largest place value -> fewest decimal places (min)
+    const minDp = Math.min(aDec, bDec);
+    // But consider numbers like "1200" (0 decimal places) and "12.3" (1 dp) -> minDp = 0 -> round to 0 decimals (integer)
+    finalValue = roundToDecimals(rawResult, minDp);
+    reason = `Addition/Subtraction => round to ${minDp} decimal place(s) (least precise decimal place among inputs).`;
+    formatted = formatNumber(finalValue, { decimals: minDp });
+  }
+
+  // Include more info
+  diag.push(reason);
+  diag.push(`Final (rounded) displayed as: ${formatted}`);
+
+  return { raw: rawResult, final: finalValue, formatted, diag, aSig, bSig, aDec, bDec };
 }
 
-clearCanvas();
-ctx.fillText("Enter values and click Calculate", 10, 30);
+/* DOM interactions */
+document.getElementById('calcBtn').addEventListener('click', ()=>{
+  const a = document.getElementById('a').value;
+  const b = document.getElementById('b').value;
+  const op = document.getElementById('op').value;
+  const showSteps = document.getElementById('steps').checked;
+  const resultBox = document.getElementById('result');
+  const diagBox = document.getElementById('diag');
+
+  try {
+    const out = compute(a, b, op);
+    resultBox.textContent = `${out.formatted}`;
+    if (showSteps){
+      diagBox.textContent = out.diag.join('\n');
+    } else {
+      diagBox.textContent = `Inputs: sig figs ${out.aSig}, ${out.bSig}. Raw result ${out.raw}. Rounded: ${out.formatted}`;
+    }
+  } catch (e){
+    resultBox.textContent = 'Error';
+    diagBox.textContent = e.message;
+  }
+});
+
+/* quick-run on load */
+document.getElementById('calcBtn').click();
 </script>
 </body>
 </html>
